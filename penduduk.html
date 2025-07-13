@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+            html, body {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                display: flex;
+                flex-direction: column;
+            }
+
+            #map {
+                flex: 1; /* agar mengisi sisa tinggi dari body */
+                width: 100%;
+            }
+        </style>
+        <title></title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/multi-style-layer.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="data/Kelas_0.js"></script>
+        <script src="data/BatasAdministrasiProvinsi_2.js"></script>
+        <script src="data/BatasAdministrasiKabupaten_3.js"></script>
+        <script src="data/BatasAdministrasiKecamatan_4.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl: false,
+            maxZoom: 28,
+            minZoom: 1
+        }).setView([-7.7415, 110.7284], 10); // <--- atur koordinat tengah dan zoom level
+
+
+        // Tambahkan basemap di bawahnya
+        var esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        }).addTo(map);
+
+        var OpenStreetMap_Mapnik = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        });
+        var GoogleHybrid = L.tileLayer('http://mt0.google.com/vt/lyrs=y&hl=en&x={x}&y={y}&z={z}', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        });
+
+        var OpenTopoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+        });
+            var baseMaps = {
+            "Citra Satelit": esri,
+            "Open Street Map": OpenStreetMap_Mapnik,
+            "Open Topo Map" : OpenTopoMap,
+            "GoogleHybrid" : GoogleHybrid
+        };
+        L.control.layers(baseMaps, null, { collapsed: false }).addTo(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // add class to format popup if it contains media
+		function addClassToPopupIfMedia(content, popup) {
+			var tempDiv = document.createElement('div');
+			tempDiv.innerHTML = content;
+			if (tempDiv.querySelector('td img')) {
+				popup._contentNode.classList.add('media');
+					// Delay to force the redraw
+					setTimeout(function() {
+						popup.update();
+					}, 10);
+			} else {
+				popup._contentNode.classList.remove('media');
+			}
+		}
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+            map.setMaxBounds(map.getBounds());
+        }
+        function pop_Kelas_0(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">Kecamatan</th>\
+                        <td>' + (feature.properties['NAMOBJ'] !== null ? autolinker.link(String(feature.properties['NAMOBJ']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Penduduk</th>\
+                        <td>' + (feature.properties['Penduduk'] !== null ? autolinker.link(String(feature.properties['Penduduk']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Kepadatann</th>\
+                        <td>' + (feature.properties['Kepadatann'] !== null ? autolinker.link(String(feature.properties['Kepadatann']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Kelas_0_0(feature) {
+            switch(String(feature.properties['Skor_Pend'])) {
+                case '1':
+                    return {
+                pane: 'pane_Kelas_0',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(247,252,245,1.0)',
+                interactive: true,
+            }
+                    break;
+                case '2':
+                    return {
+                pane: 'pane_Kelas_0',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(201,234,194,1.0)',
+                interactive: true,
+            }
+                    break;
+                case '3':
+                    return {
+                pane: 'pane_Kelas_0',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(123,199,124,1.0)',
+                interactive: true,
+            }
+                    break;
+                case '4':
+                    return {
+                pane: 'pane_Kelas_0',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(42,146,75,1.0)',
+                interactive: true,
+            }
+                    break;
+                case '5':
+                    return {
+                pane: 'pane_Kelas_0',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,68,27,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_Kelas_0');
+        map.getPane('pane_Kelas_0').style.zIndex = 400;
+        map.getPane('pane_Kelas_0').style['mix-blend-mode'] = 'normal';
+        var layer_Kelas_0 = new L.geoJson(json_Kelas_0, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Kelas_0',
+            layerName: 'layer_Kelas_0',
+            pane: 'pane_Kelas_0',
+            onEachFeature: pop_Kelas_0,
+            style: style_Kelas_0_0,
+        });
+        bounds_group.addLayer(layer_Kelas_0);
+        map.addLayer(layer_Kelas_0);
+        map.createPane('pane_JumlahPenduduk_1');
+        map.getPane('pane_JumlahPenduduk_1').style.zIndex = 401;
+        var img_JumlahPenduduk_1 = 'data/JumlahPenduduk_1.png';
+        var img_bounds_JumlahPenduduk_1 = [[-7.809007541181574,110.44474195886163],[-7.538689273364964,110.79969027007282]];
+        var layer_JumlahPenduduk_1 = new L.imageOverlay(img_JumlahPenduduk_1,
+                                              img_bounds_JumlahPenduduk_1,
+                                              {pane: 'pane_JumlahPenduduk_1'});
+        bounds_group.addLayer(layer_JumlahPenduduk_1);
+        map.addLayer(layer_JumlahPenduduk_1);
+        function pop_BatasAdministrasiProvinsi_2(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">WADMPR</th>\
+                        <td>' + (feature.properties['WADMPR'] !== null ? autolinker.link(String(feature.properties['WADMPR']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BatasAdministrasiProvinsi_2_0() {
+            return {
+                pane: 'pane_BatasAdministrasiProvinsi_2',
+                opacity: 1,
+                color: 'rgba(255,255,255,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 8.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        function style_BatasAdministrasiProvinsi_2_1() {
+            return {
+                pane: 'pane_BatasAdministrasiProvinsi_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'round',
+                lineJoin: 'miter',
+                weight: 4.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BatasAdministrasiProvinsi_2');
+        map.getPane('pane_BatasAdministrasiProvinsi_2').style.zIndex = 402;
+        map.getPane('pane_BatasAdministrasiProvinsi_2').style['mix-blend-mode'] = 'normal';
+        var layer_BatasAdministrasiProvinsi_2 = new L.geoJson.multiStyle(json_BatasAdministrasiProvinsi_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BatasAdministrasiProvinsi_2',
+            layerName: 'layer_BatasAdministrasiProvinsi_2',
+            pane: 'pane_BatasAdministrasiProvinsi_2',
+            onEachFeature: pop_BatasAdministrasiProvinsi_2,
+            styles: [style_BatasAdministrasiProvinsi_2_0,style_BatasAdministrasiProvinsi_2_1,]
+        });
+        bounds_group.addLayer(layer_BatasAdministrasiProvinsi_2);
+        map.addLayer(layer_BatasAdministrasiProvinsi_2);
+        function pop_BatasAdministrasiKabupaten_3(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">WADMKK</th>\
+                        <td>' + (feature.properties['WADMKK'] !== null ? autolinker.link(String(feature.properties['WADMKK']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BatasAdministrasiKabupaten_3_0() {
+            return {
+                pane: 'pane_BatasAdministrasiKabupaten_3',
+                opacity: 1,
+                color: 'rgba(255,255,255,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 6.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        function style_BatasAdministrasiKabupaten_3_1() {
+            return {
+                pane: 'pane_BatasAdministrasiKabupaten_3',
+                opacity: 1,
+                color: 'rgba(0,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'round',
+                lineJoin: 'miter',
+                weight: 3.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BatasAdministrasiKabupaten_3');
+        map.getPane('pane_BatasAdministrasiKabupaten_3').style.zIndex = 403;
+        map.getPane('pane_BatasAdministrasiKabupaten_3').style['mix-blend-mode'] = 'normal';
+        var layer_BatasAdministrasiKabupaten_3 = new L.geoJson.multiStyle(json_BatasAdministrasiKabupaten_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BatasAdministrasiKabupaten_3',
+            layerName: 'layer_BatasAdministrasiKabupaten_3',
+            pane: 'pane_BatasAdministrasiKabupaten_3',
+            onEachFeature: pop_BatasAdministrasiKabupaten_3,
+            styles: [style_BatasAdministrasiKabupaten_3_0,style_BatasAdministrasiKabupaten_3_1,]
+        });
+        bounds_group.addLayer(layer_BatasAdministrasiKabupaten_3);
+        map.addLayer(layer_BatasAdministrasiKabupaten_3);
+        function pop_BatasAdministrasiKecamatan_4(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">NAMOBJ</th>\
+                        <td>' + (feature.properties['NAMOBJ'] !== null ? autolinker.link(String(feature.properties['NAMOBJ']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BatasAdministrasiKecamatan_4_0() {
+            return {
+                pane: 'pane_BatasAdministrasiKecamatan_4',
+                opacity: 1,
+                color: 'rgba(255,212,127,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 4.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        function style_BatasAdministrasiKecamatan_4_1() {
+            return {
+                pane: 'pane_BatasAdministrasiKecamatan_4',
+                opacity: 1,
+                color: 'rgba(0,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'round',
+                lineJoin: 'miter',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BatasAdministrasiKecamatan_4');
+        map.getPane('pane_BatasAdministrasiKecamatan_4').style.zIndex = 404;
+        map.getPane('pane_BatasAdministrasiKecamatan_4').style['mix-blend-mode'] = 'normal';
+        var layer_BatasAdministrasiKecamatan_4 = new L.geoJson.multiStyle(json_BatasAdministrasiKecamatan_4, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BatasAdministrasiKecamatan_4',
+            layerName: 'layer_BatasAdministrasiKecamatan_4',
+            pane: 'pane_BatasAdministrasiKecamatan_4',
+            onEachFeature: pop_BatasAdministrasiKecamatan_4,
+            styles: [style_BatasAdministrasiKecamatan_4_0,style_BatasAdministrasiKecamatan_4_1,]
+        });
+        bounds_group.addLayer(layer_BatasAdministrasiKecamatan_4);
+        map.addLayer(layer_BatasAdministrasiKecamatan_4);
+        var overlaysTree = [
+        {label: '<b>Batas Administrasi</b>', collapsed: true, selectAllCheckbox: true, children: [
+            {label: '<img src="legend/BatasAdministrasiKecamatan_4.png" /> Batas Administrasi Kecamatan', layer: layer_BatasAdministrasiKecamatan_4},
+            {label: '<img src="legend/BatasAdministrasiKabupaten_3.png" /> Batas Administrasi Kabupaten', layer: layer_BatasAdministrasiKabupaten_3},
+            {label: '<img src="legend/BatasAdministrasiProvinsi_2.png" /> Batas Administrasi Provinsi', layer: layer_BatasAdministrasiProvinsi_2},]},
+            {label: "Jumlah Penduduk", layer: layer_JumlahPenduduk_1},
+            {label: 'Kelas<br /><table><tr><td style="text-align: center;"><img src="legend/Kelas_0_1000jiwakm²0.png" /></td><td>< 1000 jiwa/km² </td></tr><tr><td style="text-align: center;"><img src="legend/Kelas_0_10002000jiwakm²1.png" /></td><td>1000 – 2000 jiwa/km²</td></tr><tr><td style="text-align: center;"><img src="legend/Kelas_0_20003000jiwakm²2.png" /></td><td>2000 – 3000 jiwa/km² </td></tr><tr><td style="text-align: center;"><img src="legend/Kelas_0_30004000jiwakm²3.png" /></td><td>3000 – 4000 jiwa/km² </td></tr><tr><td style="text-align: center;"><img src="legend/Kelas_0_4000jiwakm²4.png" /></td><td>≥ 4000 jiwa/km² </td></tr></table>', layer: layer_Kelas_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        setBounds();
+        L.ImageOverlay.include({
+            getBounds: function () {
+                return this._bounds;
+            }
+        });
+        resetLabels([layer_BatasAdministrasiKecamatan_4]);
+        map.on("zoomend", function(){
+            resetLabels([layer_BatasAdministrasiKecamatan_4]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_BatasAdministrasiKecamatan_4]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_BatasAdministrasiKecamatan_4]);
+        });
+        </script>
+    </body>
+</html>
